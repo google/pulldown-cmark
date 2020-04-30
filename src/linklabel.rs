@@ -23,14 +23,14 @@
 use unicase::UniCase;
 
 use crate::scanners::{is_ascii_whitespace, scan_eol};
-use crate::strings::CowStr;
+use crate::strings::Arena;
 
 pub enum ReferenceLabel<'a> {
-    Link(CowStr<'a>),
-    Footnote(CowStr<'a>),
+    Link(&'a str),
+    Footnote(&'a str),
 }
 
-pub type LinkLabel<'a> = UniCase<CowStr<'a>>;
+pub type LinkLabel<'a> = UniCase<&'a str>;
 
 /// Assumes the opening bracket has already been scanned.
 /// The line break handler determines what happens when a linebreak
@@ -39,15 +39,16 @@ pub type LinkLabel<'a> = UniCase<CowStr<'a>>;
 /// or `None` to abort parsing the label.
 /// Returns the number of bytes read (including closing bracket) and label on success.
 pub(crate) fn scan_link_label_rest<'t>(
+    arena: &mut Arena<'t>,
     text: &'t str,
-    linebreak_handler: &dyn Fn(&[u8]) -> Option<usize>,
-) -> Option<(usize, CowStr<'t>)> {
+    linebreak_handler: &dyn Fn(&'t [u8]) -> Option<usize>,
+) -> Option<(usize, &'t str)> {
     let bytes = text.as_bytes();
     let mut ix = 0;
     let mut only_white_space = true;
     let mut codepoints = 0;
     // no worries, doesnt allocate until we push things onto it
-    let mut label = String::new();
+    let mut label = arena.builder();
     let mut mark = 0;
 
     loop {
@@ -117,19 +118,22 @@ pub(crate) fn scan_link_label_rest<'t>(
 #[cfg(test)]
 mod test {
     use super::scan_link_label_rest;
+    use crate::strings::Arena;
 
     #[test]
     fn whitespace_normalization() {
         let input = "«\t\tBlurry Eyes\t\t»][blurry_eyes]";
         let expected_output = "« Blurry Eyes »"; // regular spaces!
+        let mut arena = Arena::with_capacity(input.len());
 
-        let (_bytes, normalized_label) = scan_link_label_rest(input, &|_| None).unwrap();
-        assert_eq!(expected_output, normalized_label.as_ref());
+        let (_bytes, normalized_label) = scan_link_label_rest(&mut arena, input, &|_| None).unwrap();
+        assert_eq!(expected_output, normalized_label);
     }
 
     #[test]
     fn return_carriage_linefeed_ok() {
         let input = "hello\r\nworld\r\n]";
-        assert!(scan_link_label_rest(input, &|_| Some(0)).is_some());
+        let mut arena = Arena::with_capacity(input.len());
+        assert!(scan_link_label_rest(&mut arena, input, &|_| Some(0)).is_some());
     }
 }

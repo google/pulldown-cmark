@@ -26,7 +26,7 @@ use std::convert::TryInto;
 use crate::entities;
 use crate::parse::{Alignment, HtmlScanGuard, LinkType};
 pub use crate::puncttable::{is_ascii_punctuation, is_punctuation};
-use crate::strings::CowStr;
+use crate::strings::Arena;
 
 use memchr::memchr;
 
@@ -715,8 +715,13 @@ fn char_from_codepoint(input: usize) -> Option<char> {
     char::from_u32(codepoint)
 }
 
+pub(crate) enum Entity {
+    Char(char),
+    Str(&'static str),
+}
+
 // doesn't bother to check data[0] == '&'
-pub(crate) fn scan_entity(bytes: &[u8]) -> (usize, Option<CowStr<'static>>) {
+pub(crate) fn scan_entity(bytes: &[u8]) -> (usize, Option<Entity>) {
     let mut end = 1;
     if scan_ch(&bytes[end..], b'#') == 1 {
         end += 1;
@@ -730,7 +735,7 @@ pub(crate) fn scan_entity(bytes: &[u8]) -> (usize, Option<CowStr<'static>>) {
         return if bytecount == 0 || scan_ch(&bytes[end..], b';') == 0 {
             (0, None)
         } else if let Some(c) = char_from_codepoint(codepoint) {
-            (end + 1, Some(c.into()))
+            (end + 1, Some(Entity::Char(c)))
         } else {
             (0, None)
         };
@@ -738,7 +743,7 @@ pub(crate) fn scan_entity(bytes: &[u8]) -> (usize, Option<CowStr<'static>>) {
     end += scan_while(&bytes[end..], is_ascii_alphanumeric);
     if scan_ch(&bytes[end..], b';') == 1 {
         if let Some(value) = entities::get_entity(&bytes[1..end]) {
-            return (end + 1, Some(value.into()));
+            return (end + 1, Some(Entity::Str(value)));
         }
     }
     (0, None)
@@ -909,8 +914,8 @@ fn scan_attribute_value(
 }
 
 // Remove backslash escapes and resolve entities
-pub(crate) fn unescape(input: &str) -> CowStr<'_> {
-    let mut result = String::new();
+pub(crate) fn unescape<'a>(arena: &mut Arena<'a>, input: &'a str) -> &'a str {
+    let mut result = arena.builder();
     let mut mark = 0;
     let mut i = 0;
     let bytes = input.as_bytes();
@@ -924,7 +929,10 @@ pub(crate) fn unescape(input: &str) -> CowStr<'_> {
             b'&' => match scan_entity(&bytes[i..]) {
                 (n, Some(value)) => {
                     result.push_str(&input[mark..i]);
-                    result.push_str(&value);
+                    match value {
+                        Entity::Char(c) => result.push(c),
+                        Entity::Str(slice) => result.push_str(slice),
+                    }
                     i += n;
                     mark = i;
                 }
@@ -1045,14 +1053,14 @@ pub(crate) fn scan_html_block_inner(
 }
 
 /// Returns (next_byte_offset, uri, type)
-pub(crate) fn scan_autolink(text: &str, start_ix: usize) -> Option<(usize, CowStr<'_>, LinkType)> {
+pub(crate) fn scan_autolink(text: &str, start_ix: usize) -> Option<(usize, &str, LinkType)> {
     scan_uri(text, start_ix)
         .map(|(bytes, uri)| (bytes, uri, LinkType::Autolink))
         .or_else(|| scan_email(text, start_ix).map(|(bytes, uri)| (bytes, uri, LinkType::Email)))
 }
 
 /// Returns (next_byte_offset, uri)
-fn scan_uri(text: &str, start_ix: usize) -> Option<(usize, CowStr<'_>)> {
+fn scan_uri(text: &str, start_ix: usize) -> Option<(usize, &str)> {
     let bytes = &text.as_bytes()[start_ix..];
 
     // scheme's first byte must be an ascii letter
@@ -1092,7 +1100,7 @@ fn scan_uri(text: &str, start_ix: usize) -> Option<(usize, CowStr<'_>)> {
 }
 
 /// Returns (next_byte_offset, email)
-fn scan_email(text: &str, start_ix: usize) -> Option<(usize, CowStr<'_>)> {
+fn scan_email(text: &str, start_ix: usize) -> Option<(usize, &str)> {
     // using a regex library would be convenient, but doing it by hand is not too bad
     let bytes = &text.as_bytes()[start_ix..];
     let mut i = 0;

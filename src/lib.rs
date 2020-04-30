@@ -64,8 +64,8 @@ mod linklabel;
 mod parse;
 mod puncttable;
 mod scanners;
-mod strings;
 mod tree;
+mod strings;
 
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod simd;
@@ -73,4 +73,4 @@ mod simd;
 pub use crate::parse::{
     Alignment, CodeBlockKind, Event, LinkType, OffsetIter, Options, Parser, Tag,
 };
-pub use crate::strings::{CowStr, InlineStr};
+// pub use crate::strings::{CowStr, InlineStr};
