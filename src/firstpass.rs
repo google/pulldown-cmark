@@ -389,15 +389,40 @@ impl<'a, 'b> FirstPass<'a, 'b> {
     fn parse_setext_heading(&mut self, ix: usize, node_ix: TreeIndex) -> Option<usize> {
         let bytes = self.text.as_bytes();
         let (n, level) = scan_setext_heading(&bytes[ix..])?;
-        self.tree[node_ix].item.body = ItemBody::Heading(level);
+        let mut id = None;
 
         // strip trailing whitespace
         if let Some(cur_ix) = self.tree.cur() {
-            self.tree[cur_ix].item.end -= scan_rev_while(
-                &bytes[..self.tree[cur_ix].item.end],
+            let mut header_text_end = self.tree[cur_ix].item.end;
+            header_text_end -= scan_rev_while(&bytes[..header_text_end], is_ascii_whitespace);
+
+            // parse an attribute block
+            let header_start = self.tree[cur_ix].item.start;
+            let header_text = &self.text[header_start..header_text_end];
+            if bytes[..header_text_end].last() == Some(&b'}') {
+                if let Some(attr_block_open) = header_text.rfind('{').map(|i| header_start + i) {
+                    let attr_block_end = header_text_end - 1;
+                    header_text_end = attr_block_open;
+                    let attr_block = &self.text[(attr_block_open + 1)..attr_block_end];
+                    for attr in attr_block.split_ascii_whitespace() {
+                        // iterator returned by `str::split_ascii_whitespace` never emits empty
+                        // strings, so `[0]` is always available.
+                        if attr.as_bytes()[0] == b'#' {
+                            id = Some(CowStr::Borrowed(&attr[1..]));
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // strip trailing whitespace
+            let trailing_ws = scan_rev_while(
+                &bytes[..header_text_end],
                 is_ascii_whitespace_no_nl,
             );
+            self.tree[cur_ix].item.end = header_text_end - trailing_ws;
         }
+        self.tree[node_ix].item.body = ItemBody::Heading(self.allocs.allocate_heading(level, id));
 
         Some(ix + n)
     }
@@ -989,17 +1014,19 @@ impl<'a, 'b> FirstPass<'a, 'b> {
     /// Parse an ATX heading.
     ///
     /// Returns index of start of next line.
-    fn parse_atx_heading(&mut self, mut ix: usize, atx_level: HeadingLevel) -> usize {
+    fn parse_atx_heading(&mut self, start: usize, atx_level: HeadingLevel) -> usize {
+        let mut ix = start;
         let heading_ix = self.tree.append(Item {
-            start: ix,
+            start,
             end: 0, // set later
-            body: ItemBody::Heading(atx_level),
+            body: ItemBody::default(), // set later
         });
         ix += atx_level as usize;
         // next char is space or eol (guaranteed by scan_atx_heading)
         let bytes = self.text.as_bytes();
         if let Some(eol_bytes) = scan_eol(&bytes[ix..]) {
             self.tree[heading_ix].item.end = ix + eol_bytes;
+            self.tree[heading_ix].item.body = ItemBody::Heading(self.allocs.allocate_heading(atx_level, None));
             return ix + eol_bytes;
         }
         // skip leading spaces
@@ -1011,9 +1038,32 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         let header_node_idx = self.tree.push(); // so that we can set the endpoint later
         ix = self.parse_line(ix, TableParseMode::Disabled).0;
         self.tree[header_node_idx].item.end = ix;
+        let end = ix;
 
         // remove trailing matter from header text
+        let mut id = None;
         if let Some(cur_ix) = self.tree.cur() {
+            ix -= scan_rev_while(&bytes[header_start..ix], |b| b == b'\n' || b == b'\r' || b == b' ');
+
+            // parse an attribute block
+            let header_text = &self.text[header_start..ix];
+            if header_text.as_bytes().last() == Some(&b'}') {
+                if let Some(attr_block_open) = header_text.rfind('{').map(|i| header_start + i) {
+                    let attr_block_end = ix - 1;
+                    ix = attr_block_open;
+                    let attr_block = &self.text[(attr_block_open + 1)..attr_block_end];
+                    for attr in attr_block.split_ascii_whitespace() {
+                        // iterator returned by `str::split_ascii_whitespace` never emits empty
+                        // strings, so `[0]` is always available.
+                        if attr.as_bytes()[0] == b'#' {
+                            id = Some(CowStr::Borrowed(&attr[1..]));
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // remove closing of the ATX heading
             let header_text = &bytes[header_start..ix];
             let mut limit = header_text
                 .iter()
@@ -1035,7 +1085,8 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         }
 
         self.tree.pop();
-        ix
+        self.tree[heading_ix].item.body = ItemBody::Heading(self.allocs.allocate_heading(atx_level, id));
+        end
     }
 
     /// Returns the number of bytes scanned on success.

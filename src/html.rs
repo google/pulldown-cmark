@@ -147,13 +147,20 @@ where
                     self.write("\n<p>")
                 }
             }
-            Tag::Heading(level) => {
+            Tag::Heading(level, id) => {
                 if self.end_newline {
                     self.end_newline = false;
-                    write!(&mut self.writer, "<{}>", level)
+                    self.write("<")?;
                 } else {
-                    write!(&mut self.writer, "\n<{}>", level)
+                    self.write("\n<")?;
                 }
+                write!(&mut self.writer, "{}", level)?;
+                if let Some(id) = id {
+                    self.write(" id=\"")?;
+                    escape_html(&mut self.writer, &id)?;
+                    self.write("\"")?;
+                }
+                self.write(">")
             }
             Tag::Table(alignments) => {
                 self.table_alignments = alignments;
@@ -292,7 +299,7 @@ where
             Tag::Paragraph => {
                 self.write("</p>\n")?;
             }
-            Tag::Heading(level) => {
+            Tag::Heading(level, _id) => {
                 self.write("</")?;
                 write!(&mut self.writer, "{}", level)?;
                 self.write(">\n")?;
