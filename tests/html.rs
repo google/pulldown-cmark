@@ -253,6 +253,17 @@ H2 { .class1 #id-h2-2 .class2 }
 }
 
 #[test]
+fn html_test_13() {
+    let original = r##"# H1 {.class2 .class1 #id-h1 .class2}"##;
+    let expected = r#"<h1 id="id-h1" class="class2 class1 class2">H1</h1>
+"#;
+
+    let mut s = String::new();
+    html::push_html(&mut s, Parser::new_ext(&original, Options::ENABLE_HEADING_ATTRIBUTES));
+    assert_eq!(expected, s, "Classes should neither be sorted nor deduplicated");
+}
+
+#[test]
 fn html_test_broken_callback() {
     let original = r##"[foo],
 [bar],
