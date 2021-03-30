@@ -280,5 +280,6 @@ bitflags::bitflags! {
         const ENABLE_STRIKETHROUGH = 1 << 3;
         const ENABLE_TASKLISTS = 1 << 4;
         const ENABLE_SMART_PUNCTUATION = 1 << 5;
+        const ENABLE_HEADING_ATTRIBUTES = 1 << 6;
     }
 }

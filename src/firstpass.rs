@@ -394,22 +394,25 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         // strip trailing whitespace
         if let Some(cur_ix) = self.tree.cur() {
             let mut header_text_end = self.tree[cur_ix].item.end;
-            header_text_end -= scan_rev_while(&bytes[..header_text_end], is_ascii_whitespace);
 
-            // parse an attribute block
-            let header_start = self.tree[cur_ix].item.start;
-            let header_text = &self.text[header_start..header_text_end];
-            if bytes[..header_text_end].last() == Some(&b'}') {
-                if let Some(attr_block_open) = header_text.rfind('{').map(|i| header_start + i) {
-                    let attr_block_end = header_text_end - 1;
-                    header_text_end = attr_block_open;
-                    let attr_block = &self.text[(attr_block_open + 1)..attr_block_end];
-                    for attr in attr_block.split_ascii_whitespace() {
-                        // iterator returned by `str::split_ascii_whitespace` never emits empty
-                        // strings, so `[0]` is always available.
-                        if attr.as_bytes()[0] == b'#' {
-                            id = Some(CowStr::Borrowed(&attr[1..]));
-                            break;
+            if self.options.contains(Options::ENABLE_HEADING_ATTRIBUTES) {
+                header_text_end -= scan_rev_while(&bytes[..header_text_end], is_ascii_whitespace);
+
+                // parse an attribute block
+                let header_start = self.tree[cur_ix].item.start;
+                let header_text = &self.text[header_start..header_text_end];
+                if bytes[..header_text_end].last() == Some(&b'}') {
+                    if let Some(attr_block_open) = header_text.rfind('{').map(|i| header_start + i) {
+                        let attr_block_end = header_text_end - 1;
+                        header_text_end = attr_block_open;
+                        let attr_block = &self.text[(attr_block_open + 1)..attr_block_end];
+                        for attr in attr_block.split_ascii_whitespace() {
+                            // iterator returned by `str::split_ascii_whitespace` never emits empty
+                            // strings, so `[0]` is always available.
+                            if attr.as_bytes()[0] == b'#' {
+                                id = Some(CowStr::Borrowed(&attr[1..]));
+                                break;
+                            }
                         }
                     }
                 }
@@ -1043,21 +1046,23 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         // remove trailing matter from header text
         let mut id = None;
         if let Some(cur_ix) = self.tree.cur() {
-            ix -= scan_rev_while(&bytes[header_start..ix], |b| b == b'\n' || b == b'\r' || b == b' ');
+            if self.options.contains(Options::ENABLE_HEADING_ATTRIBUTES) {
+                ix -= scan_rev_while(&bytes[header_start..ix], |b| b == b'\n' || b == b'\r' || b == b' ');
 
-            // parse an attribute block
-            let header_text = &self.text[header_start..ix];
-            if header_text.as_bytes().last() == Some(&b'}') {
-                if let Some(attr_block_open) = header_text.rfind('{').map(|i| header_start + i) {
-                    let attr_block_end = ix - 1;
-                    ix = attr_block_open;
-                    let attr_block = &self.text[(attr_block_open + 1)..attr_block_end];
-                    for attr in attr_block.split_ascii_whitespace() {
-                        // iterator returned by `str::split_ascii_whitespace` never emits empty
-                        // strings, so `[0]` is always available.
-                        if attr.as_bytes()[0] == b'#' {
-                            id = Some(CowStr::Borrowed(&attr[1..]));
-                            break;
+                // parse an attribute block
+                let header_text = &self.text[header_start..ix];
+                if header_text.as_bytes().last() == Some(&b'}') {
+                    if let Some(attr_block_open) = header_text.rfind('{').map(|i| header_start + i) {
+                        let attr_block_end = ix - 1;
+                        ix = attr_block_open;
+                        let attr_block = &self.text[(attr_block_open + 1)..attr_block_end];
+                        for attr in attr_block.split_ascii_whitespace() {
+                            // iterator returned by `str::split_ascii_whitespace` never emits empty
+                            // strings, so `[0]` is always available.
+                            if attr.as_bytes()[0] == b'#' {
+                                id = Some(CowStr::Borrowed(&attr[1..]));
+                                break;
+                            }
                         }
                     }
                 }

@@ -228,7 +228,14 @@ H2 { .class1 #id-h2-2 .class2 }
 # H1 # {#id-h1-3}
 ## H2 ## { .class1 #id-h2-3 .class2 }
 "###;
-    let expected = r#"<h1 id="id-h1">H1</h1>
+    let expected_disabled = r#"<h1>H1 {#id-h1}</h1>
+<h2>H2 { .class1 #id-h2 .class2 }</h2>
+<h1>H1 {#id-h1-2}</h1>
+<h2>H2 { .class1 #id-h2-2 .class2 }</h2>
+<h1>H1 # {#id-h1-3}</h1>
+<h2>H2 ## { .class1 #id-h2-3 .class2 }</h2>
+"#;
+    let expected_enabled = r#"<h1 id="id-h1">H1</h1>
 <h2 id="id-h2">H2</h2>
 <h1 id="id-h1-2">H1</h1>
 <h2 id="id-h2-2">H2</h2>
@@ -238,7 +245,11 @@ H2 { .class1 #id-h2-2 .class2 }
 
     let mut s = String::new();
     html::push_html(&mut s, Parser::new(&original));
-    assert_eq!(expected, s)
+    assert_eq!(expected_disabled, s);
+
+    s.clear();
+    html::push_html(&mut s, Parser::new_ext(&original, Options::ENABLE_HEADING_ATTRIBUTES));
+    assert_eq!(expected_enabled, s);
 }
 
 #[test]
