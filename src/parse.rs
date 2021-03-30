@@ -1210,7 +1210,7 @@ pub(crate) struct Allocations<'a> {
     links: Vec<(LinkType, CowStr<'a>, CowStr<'a>)>,
     cows: Vec<CowStr<'a>>,
     alignments: Vec<Vec<Alignment>>,
-    headings: Vec<(HeadingLevel, Option<CowStr<'a>>)>, // TODO: add classes
+    headings: Vec<(HeadingLevel, Option<CowStr<'a>>, Vec<CowStr<'a>>)>,
 }
 
 /// Keeps track of the reference definitions defined in the document.
@@ -1261,9 +1261,9 @@ impl<'a> Allocations<'a> {
         AlignmentIndex(ix)
     }
 
-    pub fn allocate_heading(&mut self, level: HeadingLevel, id: Option<CowStr<'a>>) -> HeadingIndex {
+    pub fn allocate_heading(&mut self, level: HeadingLevel, id: Option<CowStr<'a>>, classes: Vec<CowStr<'a>>) -> HeadingIndex {
         let ix = self.headings.len();
-        self.headings.push((level, id));
+        self.headings.push((level, id, classes));
         HeadingIndex(ix)
     }
 }
@@ -1293,7 +1293,7 @@ impl<'a> Index<AlignmentIndex> for Allocations<'a> {
 }
 
 impl<'a> Index<HeadingIndex> for Allocations<'a> {
-    type Output = (HeadingLevel, Option<CowStr<'a>>);
+    type Output = (HeadingLevel, Option<CowStr<'a>>, Vec<CowStr<'a>>);
 
     fn index(&self, ix: HeadingIndex) -> &Self::Output {
         self.headings.index(ix.0)
@@ -1381,8 +1381,8 @@ fn item_to_tag<'a>(item: &Item, allocs: &Allocations<'a>) -> Tag<'a> {
             Tag::Image(*link_type, url.clone(), title.clone())
         }
         ItemBody::Heading(heading_ix) => {
-            let &(level, ref id) = allocs.index(heading_ix);
-            Tag::Heading(level, id.clone())
+            let &(level, ref id, ref classes) = allocs.index(heading_ix);
+            Tag::Heading(level, id.clone(), classes.clone())
         },
         ItemBody::FencedCodeBlock(cow_ix) => {
             Tag::CodeBlock(CodeBlockKind::Fenced(allocs[cow_ix].clone()))
@@ -1435,8 +1435,8 @@ fn item_to_event<'a>(item: Item, text: &'a str, allocs: &Allocations<'a>) -> Eve
             Tag::Image(*link_type, url.clone(), title.clone())
         }
         ItemBody::Heading(heading_ix) => {
-            let &(level, ref id) = allocs.index(heading_ix);
-            Tag::Heading(level, id.clone())
+            let &(level, ref id, ref classes) = allocs.index(heading_ix);
+            Tag::Heading(level, id.clone(), classes.clone())
         },
         ItemBody::FencedCodeBlock(cow_ix) => {
             Tag::CodeBlock(CodeBlockKind::Fenced(allocs[cow_ix].clone()))

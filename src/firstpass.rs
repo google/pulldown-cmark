@@ -390,6 +390,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         let bytes = self.text.as_bytes();
         let (n, level) = scan_setext_heading(&bytes[ix..])?;
         let mut id = None;
+        let mut classes = Vec::new();
 
         // strip trailing whitespace
         if let Some(cur_ix) = self.tree.cur() {
@@ -409,9 +410,14 @@ impl<'a, 'b> FirstPass<'a, 'b> {
                         for attr in attr_block.split_ascii_whitespace() {
                             // iterator returned by `str::split_ascii_whitespace` never emits empty
                             // strings, so `[0]` is always available.
-                            if attr.as_bytes()[0] == b'#' {
-                                id = Some(CowStr::Borrowed(&attr[1..]));
-                                break;
+                            match attr.as_bytes()[0] {
+                                b'#' => {
+                                    id = Some(CowStr::Borrowed(&attr[1..]));
+                                }
+                                b'.' => {
+                                    classes.push(CowStr::Borrowed(&attr[1..]));
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -425,7 +431,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
             );
             self.tree[cur_ix].item.end = header_text_end - trailing_ws;
         }
-        self.tree[node_ix].item.body = ItemBody::Heading(self.allocs.allocate_heading(level, id));
+        self.tree[node_ix].item.body = ItemBody::Heading(self.allocs.allocate_heading(level, id, classes));
 
         Some(ix + n)
     }
@@ -1029,7 +1035,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         let bytes = self.text.as_bytes();
         if let Some(eol_bytes) = scan_eol(&bytes[ix..]) {
             self.tree[heading_ix].item.end = ix + eol_bytes;
-            self.tree[heading_ix].item.body = ItemBody::Heading(self.allocs.allocate_heading(atx_level, None));
+            self.tree[heading_ix].item.body = ItemBody::Heading(self.allocs.allocate_heading(atx_level, None, Vec::new()));
             return ix + eol_bytes;
         }
         // skip leading spaces
@@ -1045,6 +1051,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
 
         // remove trailing matter from header text
         let mut id = None;
+        let mut classes = Vec::new();
         if let Some(cur_ix) = self.tree.cur() {
             if self.options.contains(Options::ENABLE_HEADING_ATTRIBUTES) {
                 ix -= scan_rev_while(&bytes[header_start..ix], |b| b == b'\n' || b == b'\r' || b == b' ');
@@ -1059,9 +1066,14 @@ impl<'a, 'b> FirstPass<'a, 'b> {
                         for attr in attr_block.split_ascii_whitespace() {
                             // iterator returned by `str::split_ascii_whitespace` never emits empty
                             // strings, so `[0]` is always available.
-                            if attr.as_bytes()[0] == b'#' {
-                                id = Some(CowStr::Borrowed(&attr[1..]));
-                                break;
+                            match attr.as_bytes()[0] {
+                                b'#' => {
+                                    id = Some(CowStr::Borrowed(&attr[1..]));
+                                }
+                                b'.' => {
+                                    classes.push(CowStr::Borrowed(&attr[1..]));
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -1090,7 +1102,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         }
 
         self.tree.pop();
-        self.tree[heading_ix].item.body = ItemBody::Heading(self.allocs.allocate_heading(atx_level, id));
+        self.tree[heading_ix].item.body = ItemBody::Heading(self.allocs.allocate_heading(atx_level, id, classes));
         end
     }
 

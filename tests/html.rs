@@ -236,11 +236,11 @@ H2 { .class1 #id-h2-2 .class2 }
 <h2>H2 ## { .class1 #id-h2-3 .class2 }</h2>
 "#;
     let expected_enabled = r#"<h1 id="id-h1">H1</h1>
-<h2 id="id-h2">H2</h2>
+<h2 id="id-h2" class="class1 class2">H2</h2>
 <h1 id="id-h1-2">H1</h1>
-<h2 id="id-h2-2">H2</h2>
+<h2 id="id-h2-2" class="class1 class2">H2</h2>
 <h1 id="id-h1-3">H1</h1>
-<h2 id="id-h2-3">H2</h2>
+<h2 id="id-h2-3" class="class1 class2">H2</h2>
 "#;
 
     let mut s = String::new();
