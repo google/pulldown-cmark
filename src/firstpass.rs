@@ -406,20 +406,12 @@ impl<'a, 'b> FirstPass<'a, 'b> {
                     if let Some(attr_block_open) = header_text.rfind('{').map(|i| header_start + i) {
                         let attr_block_end = header_text_end - 1;
                         header_text_end = attr_block_open;
-                        let attr_block = &self.text[(attr_block_open + 1)..attr_block_end];
-                        for attr in attr_block.split_ascii_whitespace() {
-                            // iterator returned by `str::split_ascii_whitespace` never emits empty
-                            // strings, so `[0]` is always available.
-                            match attr.as_bytes()[0] {
-                                b'#' => {
-                                    id = Some(CowStr::Borrowed(&attr[1..]));
-                                }
-                                b'.' => {
-                                    classes.push(CowStr::Borrowed(&attr[1..]));
-                                }
-                                _ => {}
-                            }
-                        }
+                        self.parse_inside_attribute_block(
+                            attr_block_open + 1,
+                            attr_block_end - 1,
+                            &mut id,
+                            &mut classes
+                        );
                     }
                 }
             }
@@ -1062,20 +1054,12 @@ impl<'a, 'b> FirstPass<'a, 'b> {
                     if let Some(attr_block_open) = header_text.rfind('{').map(|i| header_start + i) {
                         let attr_block_end = ix - 1;
                         ix = attr_block_open;
-                        let attr_block = &self.text[(attr_block_open + 1)..attr_block_end];
-                        for attr in attr_block.split_ascii_whitespace() {
-                            // iterator returned by `str::split_ascii_whitespace` never emits empty
-                            // strings, so `[0]` is always available.
-                            match attr.as_bytes()[0] {
-                                b'#' => {
-                                    id = Some(CowStr::Borrowed(&attr[1..]));
-                                }
-                                b'.' => {
-                                    classes.push(CowStr::Borrowed(&attr[1..]));
-                                }
-                                _ => {}
-                            }
-                        }
+                        self.parse_inside_attribute_block(
+                            attr_block_open + 1,
+                            attr_block_end - 1,
+                            &mut id,
+                            &mut classes
+                        );
                     }
                 }
             }
@@ -1249,6 +1233,42 @@ impl<'a, 'b> FirstPass<'a, 'b> {
             Some(backup)
         } else {
             None
+        }
+    }
+
+    /// Parses an attribute block content, such as `.class1 #id .class2`.
+    ///
+    /// Returns `(id, classes)`.
+    ///
+    /// It is callers' responsibility to find opening and closing characters of the attribute
+    /// block.
+    ///
+    /// If `last_ix` is less than `first_index`, attribute block is considered as empty.
+    fn parse_inside_attribute_block(
+        &self,
+        first_ix: usize,
+        last_ix: usize,
+        id: &mut Option<CowStr<'a>>,
+        classes: &mut Vec<CowStr<'a>>,
+    ) {
+        // Return earlily when the attribute block is empty.
+        if first_ix > last_ix {
+            return;
+        }
+
+        let attr_block = &self.text[first_ix..=last_ix];
+        for attr in attr_block.split_ascii_whitespace() {
+            // iterator returned by `str::split_ascii_whitespace` never emits empty
+            // strings, so `[0]` is always available.
+            match attr.as_bytes()[0] {
+                b'#' => {
+                    *id = Some(CowStr::Borrowed(&attr[1..]));
+                }
+                b'.' => {
+                    classes.push(CowStr::Borrowed(&attr[1..]));
+                }
+                _ => {}
+            }
         }
     }
 }
