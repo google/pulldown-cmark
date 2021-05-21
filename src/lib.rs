@@ -132,6 +132,7 @@ pub enum Tag<'a> {
     Emphasis,
     Strong,
     Strikethrough,
+    Options,
 
     /// A link. The first field is the link type, the second the destination URL and the third is a title.
     Link(LinkType, CowStr<'a>, CowStr<'a>),

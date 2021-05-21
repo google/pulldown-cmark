@@ -54,6 +54,7 @@ pub(crate) enum ItemBody {
     Text,
     SoftBreak,
     HardBreak,
+    Options,
 
     // These are possible inline items, need to be resolved in second pass.
 
@@ -1349,6 +1350,7 @@ impl<'a, 'b> Iterator for OffsetIter<'a, 'b> {
 fn item_to_tag<'a>(item: &Item, allocs: &Allocations<'a>) -> Tag<'a> {
     match item.body {
         ItemBody::Paragraph => Tag::Paragraph,
+        ItemBody::Options => Tag::Options,
         ItemBody::Emphasis => Tag::Emphasis,
         ItemBody::Strong => Tag::Strong,
         ItemBody::Strikethrough => Tag::Strikethrough,
@@ -1400,6 +1402,7 @@ fn item_to_event<'a>(item: Item, text: &'a str, allocs: &Allocations<'a>) -> Eve
         ItemBody::Rule => return Event::Rule,
 
         ItemBody::Paragraph => Tag::Paragraph,
+        ItemBody::Options => Tag::Options,
         ItemBody::Emphasis => Tag::Emphasis,
         ItemBody::Strong => Tag::Strong,
         ItemBody::Strikethrough => Tag::Strikethrough,
