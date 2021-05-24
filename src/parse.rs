@@ -52,6 +52,7 @@ pub(crate) struct Item {
 pub(crate) enum ItemBody {
     Paragraph,
     Text,
+    MathText,
     SoftBreak,
     HardBreak,
 
@@ -62,6 +63,11 @@ pub(crate) enum ItemBody {
     // quote byte, can_open, can_close
     MaybeSmartQuote(u8, bool, bool),
     MaybeCode(usize, bool), // number of backticks, preceeded by backslash
+    /// Anything between two $ characters will be treated as TeX math. The opening $ must have a character immediately to its right,
+    /// while the closing $ must have a character immediately to its left. Thus, $20,000 and $30,000 won’t parse as math.
+    /// If for some reason you need to enclose text in literal $ characters,
+    /// backslash-escape them and they won’t be treated as math delimiters.
+    MaybeMath(bool, bool), // preceded by char, follow by char
     MaybeHtml,
     MaybeLinkOpen,
     // bool indicates whether or not the preceeding section could be a reference
@@ -73,6 +79,7 @@ pub(crate) enum ItemBody {
     Strong,
     Strikethrough,
     Code(CowIndex),
+    Math(CowIndex),
     Link(LinkIndex),
     Image(LinkIndex),
     FootnoteReference(CowIndex),
@@ -82,6 +89,7 @@ pub(crate) enum ItemBody {
     Heading(HeadingLevel), // heading level
     FencedCodeBlock(CowIndex),
     IndentCodeBlock,
+    MathBlock,
     Html,
     OwnedHtml(CowIndex),
     BlockQuote,
@@ -109,6 +117,7 @@ impl<'a> ItemBody {
                 | ItemBody::MaybeSmartQuote(..)
                 | ItemBody::MaybeHtml
                 | ItemBody::MaybeCode(..)
+                | ItemBody::MaybeMath(..)
                 | ItemBody::MaybeLinkOpen
                 | ItemBody::MaybeLinkClose(..)
                 | ItemBody::MaybeImage
@@ -232,7 +241,6 @@ impl<'input, 'callback> Parser<'input, 'callback> {
                         self.tree[cur_ix].item.end = ix;
                         self.tree[cur_ix].next = node;
                         self.tree[cur_ix].child = Some(text_node);
-                        prev = cur;
                         cur = node;
                         if let Some(node_ix) = cur {
                             self.tree[node_ix].item.start = max(self.tree[node_ix].item.start, ix);
@@ -313,6 +321,34 @@ impl<'input, 'callback> Parser<'input, 'callback> {
                         if scan == None {
                             self.tree[cur_ix].item.body = ItemBody::Text;
                         }
+                    }
+                }
+                ItemBody::MaybeMath(true, _) => {
+                    self.tree[cur_ix].item.body = ItemBody::Text;
+                    cur = self.tree[cur_ix].next;
+                }
+                ItemBody::MaybeMath(_, true) => {
+                    // folowed by char
+                    let mut scan = self.tree[cur_ix].next;
+                    while let Some(scan_ix) = scan {
+                        if let ItemBody::MaybeMath(true, _) = self.tree[scan_ix].item.body {
+                            let open = cur_ix;
+                            let close = scan_ix;
+
+                            let span_start = self.tree[open].item.end;
+                            let span_end = self.tree[close].item.start;
+                            let cow = self.text[span_start..span_end].into();
+
+                            self.tree[open].item.body =
+                                ItemBody::Math(self.allocs.allocate_cow(cow));
+                            self.tree[open].item.end = self.tree[close].item.end;
+                            self.tree[open].next = self.tree[close].next;
+                            break;
+                        }
+                        scan = self.tree[scan_ix].next;
+                    }
+                    if scan == None {
+                        self.tree[cur_ix].item.body = ItemBody::Text;
                     }
                 }
                 ItemBody::MaybeLinkOpen => {
@@ -900,6 +936,21 @@ impl<'a> Tree<Item> {
             });
         }
     }
+    pub(crate) fn append_math_text(&mut self, start: usize, end: usize) {
+        if end > start {
+            if let Some(ix) = self.cur() {
+                if ItemBody::MathText == self[ix].item.body && self[ix].item.end == start {
+                    self[ix].item.end = end;
+                    return;
+                }
+            }
+            self.append(Item {
+                start,
+                end,
+                body: ItemBody::MathText,
+            });
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1364,6 +1415,7 @@ fn item_to_tag<'a>(item: &Item, allocs: &Allocations<'a>) -> Tag<'a> {
         ItemBody::FencedCodeBlock(cow_ix) => {
             Tag::CodeBlock(CodeBlockKind::Fenced(allocs[cow_ix].clone()))
         }
+        ItemBody::MathBlock => Tag::MathBlock,
         ItemBody::IndentCodeBlock => Tag::CodeBlock(CodeBlockKind::Indented),
         ItemBody::BlockQuote => Tag::BlockQuote,
         ItemBody::List(_, c, listitem_start) => {
@@ -1386,7 +1438,9 @@ fn item_to_tag<'a>(item: &Item, allocs: &Allocations<'a>) -> Tag<'a> {
 fn item_to_event<'a>(item: Item, text: &'a str, allocs: &Allocations<'a>) -> Event<'a> {
     let tag = match item.body {
         ItemBody::Text => return Event::Text(text[item.start..item.end].into()),
+        ItemBody::MathText => return Event::MathText(text[item.start..item.end].into(), false),
         ItemBody::Code(cow_ix) => return Event::Code(allocs[cow_ix].clone()),
+        ItemBody::Math(cow_ix) => return Event::MathText(allocs[cow_ix].clone(), true),
         ItemBody::SynthesizeText(cow_ix) => return Event::Text(allocs[cow_ix].clone()),
         ItemBody::SynthesizeChar(c) => return Event::Text(c.into()),
         ItemBody::Html => return Event::Html(text[item.start..item.end].into()),
@@ -1415,6 +1469,7 @@ fn item_to_event<'a>(item: Item, text: &'a str, allocs: &Allocations<'a>) -> Eve
         ItemBody::FencedCodeBlock(cow_ix) => {
             Tag::CodeBlock(CodeBlockKind::Fenced(allocs[cow_ix].clone()))
         }
+        ItemBody::MathBlock => Tag::MathBlock,
         ItemBody::IndentCodeBlock => Tag::CodeBlock(CodeBlockKind::Indented),
         ItemBody::BlockQuote => Tag::BlockQuote,
         ItemBody::List(_, c, listitem_start) => {

@@ -197,6 +197,11 @@ impl<'a, 'b> FirstPass<'a, 'b> {
             // TODO: shouldn't we do this for all block level items?
             return ix + scan_blank_line(&bytes[ix..]).unwrap_or(0);
         }
+        if self.options.contains(Options::ENABLE_MATH) {
+            if let Some((n, block_indicator)) = scan_math(&bytes[ix..]) {
+                return self.parse_math_block(ix, indent, n, block_indicator);
+            }
+        }
 
         if let Some((n, fence_ch)) = scan_code_fence(&bytes[ix..]) {
             return self.parse_fenced_code_block(ix, indent, fence_ch, n);
@@ -533,6 +538,21 @@ impl<'a, 'b> FirstPass<'a, 'b> {
                         }
                         LoopInstruction::ContinueAndSkip(count - 1)
                     }
+                    b'$' => {
+                        self.tree.append_text(begin_text, ix);
+                        let preceded_by_char = ix > 0 && !is_ascii_whitespace(bytes[ix - 1]);
+                        let followed_by_char =
+                            ix + 1 < self.text.len() && !is_ascii_whitespace(bytes[ix + 1]);
+                        if preceded_by_char || followed_by_char {
+                            self.tree.append(Item {
+                                start: ix,
+                                end: ix + 1,
+                                body: ItemBody::MaybeMath(preceded_by_char, followed_by_char),
+                            });
+                        }
+                        begin_text = ix + 1;
+                        LoopInstruction::ContinueAndSkip(0)
+                    }
                     b'`' => {
                         self.tree.append_text(begin_text, ix);
                         let count = 1 + scan_ch_repeat(&bytes[(ix + 1)..], b'`');
@@ -819,6 +839,68 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         }
         self.pop(end_ix);
         ix
+    }
+    fn parse_math_block(
+        &mut self,
+        start_ix: usize,
+        indent: usize,
+        _n_indicator_char: usize,
+        indicator: MathBlockIndicator,
+    ) -> usize {
+        let bytes = self.text.as_bytes();
+        // skip the current line
+        let mut ix = start_ix + scan_nextline(&bytes[start_ix..]);
+        self.tree.append(Item {
+            start: start_ix,
+            end: 0, // will get set later
+            body: ItemBody::MathBlock,
+        });
+        self.tree.push();
+        loop {
+            let mut line_start = LineStart::new(&bytes[ix..]);
+            let n_containers = scan_containers(&self.tree, &mut line_start);
+            if n_containers < self.tree.spine_len() {
+                break;
+            }
+            line_start.scan_space(indent);
+            let mut close_line_start = line_start.clone();
+            // the closing math_block may be indented up to three spaces
+            if !close_line_start.scan_space(4) {
+                let close_ix = ix + close_line_start.bytes_scanned();
+                if let Some(n) =
+                    scan_closing_math_block(&bytes[close_ix..], indicator, _n_indicator_char)
+                {
+                    ix = close_ix + n;
+                    break;
+                }
+            }
+            let remaining_space = line_start.remaining_space();
+            ix += line_start.bytes_scanned();
+            let next_ix = ix + scan_nextline(&bytes[ix..]);
+            self.append_math_text(remaining_space, ix, next_ix);
+            ix = next_ix;
+        }
+        self.pop(ix);
+        // try to read trailing whitespace or it will register as a completely blank line
+        ix + scan_blank_line(&bytes[ix..]).unwrap_or(0)
+    }
+
+    fn append_math_text(&mut self, remaining_space: usize, start: usize, end: usize) {
+        if remaining_space > 0 {
+            let cow_ix = self.allocs.allocate_cow("   "[..remaining_space].into());
+            self.tree.append(Item {
+                start,
+                end: start,
+                body: ItemBody::SynthesizeText(cow_ix),
+            });
+        }
+        if self.text.as_bytes()[end - 2] == b'\r' {
+            // Normalize CRLF to LF
+            self.tree.append_math_text(start, end - 2);
+            self.tree.append_math_text(end - 1, end);
+        } else {
+            self.tree.append_math_text(start, end);
+        }
     }
 
     fn parse_fenced_code_block(
@@ -1413,6 +1495,9 @@ fn special_bytes(options: &Options) -> [bool; 256] {
         for &byte in &[b'.', b'-', b'"', b'\''] {
             bytes[byte as usize] = true;
         }
+    }
+    if options.contains(Options::ENABLE_MATH) {
+        bytes[b'$' as usize] = true;
     }
 
     bytes
