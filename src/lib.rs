@@ -142,6 +142,32 @@ pub enum Tag<'a> {
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum TagEnd {
+    Paragraph,
+    Heading(HeadingLevel),
+
+    BlockQuote,
+    CodeBlock,
+
+    List(bool), // true for ordered lists
+    Item,
+    FootnoteDefinition,
+
+    Table,
+    TableHead,
+    TableRow,
+    TableCell,
+
+    Emphasis,
+    Strong,
+    Strikethrough,
+
+    Link,
+    Image,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum HeadingLevel {
     H1 = 1,
     H2,
@@ -232,8 +258,7 @@ pub enum Event<'a> {
     #[cfg_attr(feature = "serde", serde(borrow))]
     Start(Tag<'a>),
     /// End of a tagged element.
-    #[cfg_attr(feature = "serde", serde(borrow))]
-    End(Tag<'a>),
+    End(TagEnd),
     /// A text node.
     #[cfg_attr(feature = "serde", serde(borrow))]
     Text(CowStr<'a>),
