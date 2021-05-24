@@ -218,6 +218,52 @@ fn html_test_11() {
 }
 
 #[test]
+fn html_test_12() {
+    let original = r###"# H1 {#id-h1}
+## H2 { .class1 #id-h2 .class2 }
+H1 {#id-h1-2}
+==
+H2 { .class1 #id-h2-2 .class2 }
+--
+# H1 # {#id-h1-3}
+## H2 ## { .class1 #id-h2-3 .class2 }
+"###;
+    let expected_disabled = r#"<h1>H1 {#id-h1}</h1>
+<h2>H2 { .class1 #id-h2 .class2 }</h2>
+<h1>H1 {#id-h1-2}</h1>
+<h2>H2 { .class1 #id-h2-2 .class2 }</h2>
+<h1>H1 # {#id-h1-3}</h1>
+<h2>H2 ## { .class1 #id-h2-3 .class2 }</h2>
+"#;
+    let expected_enabled = r#"<h1 id="id-h1">H1</h1>
+<h2 id="id-h2" class="class1 class2">H2</h2>
+<h1 id="id-h1-2">H1</h1>
+<h2 id="id-h2-2" class="class1 class2">H2</h2>
+<h1 id="id-h1-3">H1</h1>
+<h2 id="id-h2-3" class="class1 class2">H2</h2>
+"#;
+
+    let mut s = String::new();
+    html::push_html(&mut s, Parser::new(&original));
+    assert_eq!(expected_disabled, s);
+
+    s.clear();
+    html::push_html(&mut s, Parser::new_ext(&original, Options::ENABLE_HEADING_ATTRIBUTES));
+    assert_eq!(expected_enabled, s);
+}
+
+#[test]
+fn html_test_13() {
+    let original = r##"# H1 {.class2 .class1 #id-h1 .class2}"##;
+    let expected = r#"<h1 id="id-h1" class="class2 class1 class2">H1</h1>
+"#;
+
+    let mut s = String::new();
+    html::push_html(&mut s, Parser::new_ext(&original, Options::ENABLE_HEADING_ATTRIBUTES));
+    assert_eq!(expected, s, "Classes should neither be sorted nor deduplicated");
+}
+
+#[test]
 fn html_test_broken_callback() {
     let original = r##"[foo],
 [bar],
